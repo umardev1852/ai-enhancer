@@ -65,8 +65,9 @@ PY
 fi
 
 # ---------------------------------------------------------------- models
-# The models are not stored in the git repo itself; they ship inside the release zips
-# of Real-ESRGAN-ncnn-vulkan (the Linux zip is the smallest that contains them).
+# The models are not stored in a git repo; they ship inside the portable ncnn-vulkan zips
+# attached to the xinntao/Real-ESRGAN v0.2.5.0 release (the Linux zip is enough, we only
+# need its models/ folder).
 need_models=0
 for NAME in realesr-animevideov3-x4 realesrgan-x4plus; do
   for EXT in param bin; do
@@ -75,14 +76,14 @@ for NAME in realesr-animevideov3-x4 realesrgan-x4plus; do
 done
 
 if [ "$need_models" = "1" ]; then
-  echo "Looking up latest Real-ESRGAN-ncnn-vulkan release..."
+  echo "Looking up Real-ESRGAN v0.2.5.0 release..."
   TMP="$(mktemp -d)"
-  fetch "https://api.github.com/repos/xinntao/Real-ESRGAN-ncnn-vulkan/releases/latest" "$TMP/release.json"
+  fetch "https://api.github.com/repos/xinntao/Real-ESRGAN/releases/tags/v0.2.5.0" "$TMP/release.json"
   URL="$(python3 - "$TMP/release.json" <<'PY'
 import json, sys
 assets = json.load(open(sys.argv[1]))["assets"]
 for a in assets:
-    if a["name"].endswith("ubuntu.zip"):
+    if "ncnn" in a["name"] and a["name"].endswith("ubuntu.zip"):
         print(a["browser_download_url"])
         break
 else:
@@ -91,7 +92,7 @@ PY
 )"
   case "$URL" in
     http*) ;;
-    *) fail "No ubuntu zip in Real-ESRGAN-ncnn-vulkan release. Assets: $URL" ;;
+    *) fail "No ncnn ubuntu zip in the Real-ESRGAN v0.2.5.0 release. Assets: $URL" ;;
   esac
   echo "Downloading $URL"
   fetch "$URL" "$TMP/models.zip"
