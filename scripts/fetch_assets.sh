@@ -101,7 +101,7 @@ PY
   for NAME in realesr-animevideov3-x4 realesrgan-x4plus; do
     for EXT in param bin; do
       SRC="$(find "$TMP/m" -name "$NAME.$EXT" | head -1)"
-      [ -n "$SRC" ] || fail "Model file $NAME.$EXT not found inside the release zip"
+      [ -n "$SRC" ] || fail "Model file $NAME.$EXT not found in zip $URL. Files: $(find "$TMP/m" -type f | sed "s#$TMP/m/##" | tr '\n' ' ')"
       cp "$SRC" "$MODEL_DIR/$NAME.$EXT"
     done
   done
