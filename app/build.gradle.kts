@@ -7,7 +7,7 @@ plugins {
 android {
     namespace = "com.umar.aienhancer"
     compileSdk = 35
-    ndkVersion = "27.2.12479018"
+    ndkVersion = (project.findProperty("ndkVer") as String?) ?: "28.2.13676358"
 
     defaultConfig {
         applicationId = "com.umar.aienhancer"

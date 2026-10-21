@@ -23,7 +23,7 @@ Build ke dauran ncnn aur models automatically download hote hain (`scripts/fetch
 bash scripts/fetch_assets.sh
 gradle assembleDebug      # Gradle 8.9 (ya Android Studio se open karke Run karein)
 ```
-Chahiye: JDK 17, Android SDK 35, NDK 27.2.12479018, CMake 3.22.1.
+Chahiye: JDK 17, Android SDK 35, NDK 28+ (naya wala), CMake 3.22.1.
 
 ## Notes
 - Phone par Vulkan GPU use hota hai. Agar app crash kare to AI HD tab mein **Use GPU** band kar dein.

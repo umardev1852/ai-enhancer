@@ -29,7 +29,11 @@ jobs:
         run: |
           SDKMANAGER="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
           yes | "$SDKMANAGER" --licenses > /dev/null || true
-          "$SDKMANAGER" "ndk;27.2.12479018" "cmake;3.22.1" "platforms;android-35" "build-tools;34.0.0"
+          # The prebuilt ncnn is built with a very recent NDK, so use the newest stable one.
+          NDK_PKG="$("$SDKMANAGER" --list 2>/dev/null | grep -oE '^ *ndk;[0-9]+\.[0-9]+\.[0-9]+' | tr -d ' ' | sort -V | tail -1)"
+          echo "Using $NDK_PKG"
+          "$SDKMANAGER" "$NDK_PKG" "cmake;3.22.1" "platforms;android-35" "build-tools;34.0.0"
+          echo "NDK_VER=${NDK_PKG#ndk;}" >> "$GITHUB_ENV"
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -38,7 +42,7 @@ jobs:
       - name: Build debug APK
         run: |
           set -o pipefail
-          gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
+          gradle assembleDebug --no-daemon --stacktrace -PndkVer="$NDK_VER" 2>&1 | tee build.log
 
       - name: Summarize build errors
         if: failure()
