@@ -65,41 +65,53 @@ PY
 fi
 
 # ---------------------------------------------------------------- models
-LISTING="$(mktemp)"
-fetch "https://api.github.com/repos/xinntao/Real-ESRGAN-ncnn-vulkan/contents/models" "$LISTING"
-echo "Models available upstream:"
-python3 - "$LISTING" <<'PY'
-import json, sys
-for f in json.load(open(sys.argv[1])):
-    print("  ", f["name"], f.get("size"))
-PY
-
+# The models are not stored in the git repo itself; they ship inside the release zips
+# of Real-ESRGAN-ncnn-vulkan (the Linux zip is the smallest that contains them).
+need_models=0
 for NAME in realesr-animevideov3-x4 realesrgan-x4plus; do
   for EXT in param bin; do
-    OUT="$MODEL_DIR/$NAME.$EXT"
-    if [ ! -s "$OUT" ]; then
-      URL="$(python3 - "$LISTING" "$NAME.$EXT" <<'PY'
+    [ -s "$MODEL_DIR/$NAME.$EXT" ] || need_models=1
+  done
+done
+
+if [ "$need_models" = "1" ]; then
+  echo "Looking up latest Real-ESRGAN-ncnn-vulkan release..."
+  TMP="$(mktemp -d)"
+  fetch "https://api.github.com/repos/xinntao/Real-ESRGAN-ncnn-vulkan/releases/latest" "$TMP/release.json"
+  URL="$(python3 - "$TMP/release.json" <<'PY'
 import json, sys
-want = sys.argv[2]
-for f in json.load(open(sys.argv[1])):
-    if f["name"] == want:
-        print(f["download_url"])
+assets = json.load(open(sys.argv[1]))["assets"]
+for a in assets:
+    if a["name"].endswith("ubuntu.zip"):
+        print(a["browser_download_url"])
         break
 else:
-    print("MISSING " + ", ".join(f["name"] for f in json.load(open(sys.argv[1]))))
+    print("NONE " + ", ".join(a["name"] for a in assets))
 PY
 )"
-      case "$URL" in
-        http*) ;;
-        *) fail "Model file $NAME.$EXT not found upstream. Available: $URL" ;;
-      esac
-      echo "Downloading $NAME.$EXT"
-      fetch "$URL" "$OUT"
-    fi
+  case "$URL" in
+    http*) ;;
+    *) fail "No ubuntu zip in Real-ESRGAN-ncnn-vulkan release. Assets: $URL" ;;
+  esac
+  echo "Downloading $URL"
+  fetch "$URL" "$TMP/models.zip"
+  unzip -q "$TMP/models.zip" -d "$TMP/m"
+  echo "Models found in zip:"
+  find "$TMP/m" -name '*.param' -printf '  %f\n'
+  for NAME in realesr-animevideov3-x4 realesrgan-x4plus; do
+    for EXT in param bin; do
+      SRC="$(find "$TMP/m" -name "$NAME.$EXT" | head -1)"
+      [ -n "$SRC" ] || fail "Model file $NAME.$EXT not found inside the release zip"
+      cp "$SRC" "$MODEL_DIR/$NAME.$EXT"
+    done
   done
-  # a git-lfs pointer would be only ~130 bytes
+  rm -rf "$TMP"
+fi
+
+for NAME in realesr-animevideov3-x4 realesrgan-x4plus; do
+  # a git-lfs pointer / error page would be tiny
   if [ "$(stat -c%s "$MODEL_DIR/$NAME.bin")" -lt 100000 ]; then
-    fail "$NAME.bin looks like a Git LFS pointer, not a real model"
+    fail "$NAME.bin is suspiciously small, not a real model"
   fi
 done
 
