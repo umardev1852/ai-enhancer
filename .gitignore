@@ -1,0 +1,11 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.DS_Store
+.cxx/
+
+# Fetched at build time by scripts/fetch_assets.sh
+app/src/main/cpp/ncnn/
+app/src/main/assets/models/

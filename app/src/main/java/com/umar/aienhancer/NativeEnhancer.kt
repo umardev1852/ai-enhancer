@@ -1,0 +1,62 @@
+package com.umar.aienhancer
+
+import android.content.Context
+import android.graphics.Bitmap
+import java.io.File
+
+/** Called by native code after every tile. Return false to cancel. */
+fun interface ProgressListener {
+    fun onProgress(done: Int, total: Int): Boolean
+}
+
+object NativeEnhancer {
+    init {
+        System.loadLibrary("enhancer")
+    }
+
+    external fun gpuCount(): Int
+
+    /**
+     * Runs a Real-ESRGAN ncnn model tile by tile.
+     * [input] and [output] must be ARGB_8888, output = input * modelScale in both sides.
+     */
+    external fun upscale(
+        input: Bitmap,
+        output: Bitmap,
+        paramPath: String,
+        binPath: String,
+        modelScale: Int,
+        tile: Int,
+        useGpu: Boolean,
+        listener: ProgressListener
+    ): Boolean
+}
+
+enum class UpscaleModel(val label: String, val hint: String, val file: String, val tile: Int) {
+    PHOTO("Photo (best)", "Real-ESRGAN x4+  -  best for real photos, slower", "realesrgan-x4plus", 128),
+    FAST("Fast", "Compact model  -  quick, good for small/old images", "realesr-animevideov3-x4", 200)
+}
+
+object ModelStore {
+    /** Copies the model out of the APK assets (once) and returns (paramPath, binPath). */
+    fun ensure(context: Context, model: UpscaleModel): Pair<String, String> {
+        val dir = File(context.filesDir, "models").apply { mkdirs() }
+        val param = copyAsset(context, "models/${model.file}.param", File(dir, "${model.file}.param"))
+        val bin = copyAsset(context, "models/${model.file}.bin", File(dir, "${model.file}.bin"))
+        return param to bin
+    }
+
+    private fun copyAsset(context: Context, asset: String, dest: File): String {
+        if (!dest.exists() || dest.length() == 0L) {
+            val tmp = File(dest.parentFile, dest.name + ".tmp")
+            context.assets.open(asset).use { input ->
+                tmp.outputStream().use { output -> input.copyTo(output) }
+            }
+            if (!tmp.renameTo(dest)) {
+                tmp.copyTo(dest, overwrite = true)
+                tmp.delete()
+            }
+        }
+        return dest.absolutePath
+    }
+}
