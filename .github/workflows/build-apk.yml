@@ -36,7 +36,33 @@ jobs:
           gradle-version: "8.9"
 
       - name: Build debug APK
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: |
+          set -o pipefail
+          gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
+
+      - name: Summarize build errors
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import re
+          try:
+              lines = open("build.log", errors="replace").read().splitlines()
+          except FileNotFoundError:
+              lines = []
+          keep = []
+          for i, l in enumerate(lines):
+              if re.search(r"(^e: |error:|ERROR|FAILED|What went wrong|Execution failed|undefined reference|fatal error|Could not|not found|cannot find|Unresolved|No matching)", l):
+                  keep.append(l.strip())
+          seen, out = set(), []
+          for l in keep:
+              if l not in seen:
+                  seen.add(l)
+                  out.append(l)
+          for l in out[:9]:
+              print("::error::" + l[:900].replace("%", "%25").replace("\r", "").replace("\n", "%0A"))
+          if not out:
+              print("::error::no error lines matched; tail: " + " | ".join(x.strip() for x in lines[-6:])[:900])
+          PY
 
       - name: Name the APK
         run: cp app/build/outputs/apk/debug/app-debug.apk AIEnhancer.apk
