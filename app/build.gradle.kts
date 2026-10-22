@@ -79,4 +79,7 @@ dependencies {
 
     // On-device background removal (people), model is bundled with the library
     implementation("com.google.mlkit:segmentation-selfie:16.0.0-beta6")
+
+    // On-device face detection with contours (bundled model) for face retouch
+    implementation("com.google.mlkit:face-detection:16.1.7")
 }

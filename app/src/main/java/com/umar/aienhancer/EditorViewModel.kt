@@ -38,6 +38,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     var maxInput by mutableIntStateOf(768)
     var useGpu by mutableStateOf(true)
 
+    // ---- face retouch settings
+    var faceParams by mutableStateOf(FaceParams())
+
     private var originalFull: Bitmap? = null
     private var basePreview: Bitmap? = null
     private val undo = ArrayDeque<Snapshot>()
@@ -179,6 +182,34 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ------------------------------------------------------------ tools
+
+    fun retouchFaces() {
+        val src = base ?: return
+        if (busy) return
+        val params = faceParams
+        viewModelScope.launch(Dispatchers.Default) {
+            busy = true
+            progress = -1f
+            status = "Looking for faces..."
+            try {
+                val faces = FaceRetouch.detect(src)
+                if (faces.isEmpty()) {
+                    status = "No face found in this photo"
+                } else {
+                    status = "Retouching ${faces.size} face(s)..."
+                    val out = FaceRetouch.apply(src, faces, params)
+                    setBase(out, baseHasAlpha, push = true)
+                    status = "Retouched ${faces.size} face(s)"
+                }
+            } catch (t: OutOfMemoryError) {
+                status = "Not enough memory for this photo size"
+            } catch (t: Throwable) {
+                status = "Face retouch failed: ${t.message}"
+            } finally {
+                busy = false
+            }
+        }
+    }
 
     fun removeBackground() {
         val src = base ?: return

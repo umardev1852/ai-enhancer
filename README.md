@@ -8,6 +8,7 @@ Photos ko HD karne wali Android app. Sab kuch phone par chalta hai, internet ki 
 - **Adjust** - brightness, contrast, saturation, warmth, sharpness, auto enhance
 - **Filters** - Vivid, Warm, Cool, Fade, Dramatic, Sepia, B&W, Noir
 - **Remove background** (logon ki photos par) - transparent PNG
+- **Face retouch** (*Face* tab) - skin smooth (edges bachate hue), glow, aankhein aur daant, saare chehron par
 - **Video enhancer** (top bar mein *Video*) - har frame AI se HD, H.264 mein dobara encode, original audio saath. Phone par slow hai, pehle 5 second ki clip try karein
 - Rotate, flip, undo, back to original
 - Gallery mein save (`Pictures/AIEnhancer`) aur share

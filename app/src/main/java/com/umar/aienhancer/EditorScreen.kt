@@ -218,7 +218,7 @@ fun EditorScreen(vm: EditorViewModel, onOpenVideo: () -> Unit) {
                     .padding(top = 8.dp)
             ) {
                 ChipRow {
-                    listOf("AI HD", "Adjust", "Filters", "Tools").forEachIndexed { i, name ->
+                    listOf("AI HD", "Adjust", "Filters", "Face", "Tools").forEachIndexed { i, name ->
                         FilterChip(selected = tab == i, onClick = { tab = i }, label = { Text(name) })
                     }
                 }
@@ -233,6 +233,7 @@ fun EditorScreen(vm: EditorViewModel, onOpenVideo: () -> Unit) {
                         0 -> AiTab(vm, hasImage)
                         1 -> AdjustTab(vm, hasImage)
                         2 -> FiltersTab(vm, hasImage)
+                        3 -> FaceTab(vm, hasImage)
                         else -> ToolsTab(vm, hasImage)
                     }
                 }
@@ -316,6 +317,26 @@ private fun FiltersTab(vm: EditorViewModel, hasImage: Boolean) {
             )
         }
     }
+}
+
+@Composable
+private fun FaceTab(vm: EditorViewModel, hasImage: Boolean) {
+    val p = vm.faceParams
+    LabeledSlider("Skin smooth", p.smooth, 0f..1f, hasImage) { vm.faceParams = p.copy(smooth = it) }
+    LabeledSlider("Skin glow", p.glow, 0f..1f, hasImage) { vm.faceParams = p.copy(glow = it) }
+    LabeledSlider("Eyes", p.eyes, 0f..1f, hasImage) { vm.faceParams = p.copy(eyes = it) }
+    LabeledSlider("Teeth", p.teeth, 0f..1f, hasImage) { vm.faceParams = p.copy(teeth = it) }
+    Button(
+        onClick = { vm.retouchFaces() },
+        enabled = hasImage && !vm.busy,
+        modifier = Modifier.fillMaxWidth()
+    ) { Text("Retouch faces") }
+    Text(
+        "Finds every face, smooths skin while keeping eyes, brows and lips sharp. Use Undo in Tools to go back.",
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        fontSize = 12.sp,
+        modifier = Modifier.padding(top = 6.dp)
+    )
 }
 
 @Composable
