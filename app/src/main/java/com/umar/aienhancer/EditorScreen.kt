@@ -78,7 +78,7 @@ fun AppTheme(content: @Composable () -> Unit) {
 }
 
 @Composable
-fun EditorScreen(vm: EditorViewModel) {
+fun EditorScreen(vm: EditorViewModel, onOpenVideo: () -> Unit) {
     val context = LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) vm.load(uri)
@@ -110,6 +110,7 @@ fun EditorScreen(vm: EditorViewModel) {
                     fontSize = 20.sp,
                     modifier = Modifier.weight(1f)
                 )
+                TextButton(onClick = onOpenVideo, enabled = !vm.busy) { Text("Video") }
                 TextButton(onClick = { openPicker() }, enabled = !vm.busy) { Text("Open") }
                 TextButton(
                     onClick = {
@@ -344,7 +345,7 @@ private fun ToolsTab(vm: EditorViewModel, hasImage: Boolean) {
 // ------------------------------------------------------------------ small pieces
 
 @Composable
-private fun SectionTitle(text: String) {
+internal fun SectionTitle(text: String) {
     Text(
         text,
         color = MaterialTheme.colorScheme.primary,
@@ -354,7 +355,7 @@ private fun SectionTitle(text: String) {
 }
 
 @Composable
-private fun ChipRow(content: @Composable () -> Unit) {
+internal fun ChipRow(content: @Composable () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()

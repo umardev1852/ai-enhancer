@@ -16,11 +16,26 @@ object NativeEnhancer {
 
     external fun gpuCount(): Int
 
+    /** Loads a Real-ESRGAN ncnn model once. Returns a handle (0 = failed). Free it with [destroySession]. */
+    external fun createSession(paramPath: String, binPath: String, useGpu: Boolean): Long
+
+    external fun destroySession(handle: Long)
+
     /**
-     * Runs a Real-ESRGAN ncnn model tile by tile.
+     * Runs the loaded model tile by tile.
      * [input] and [output] must be ARGB_8888, output = input * modelScale in both sides.
      */
-    external fun upscale(
+    external fun upscaleWith(
+        handle: Long,
+        input: Bitmap,
+        output: Bitmap,
+        modelScale: Int,
+        tile: Int,
+        listener: ProgressListener
+    ): Boolean
+
+    /** One-shot helper for single photos. */
+    fun upscale(
         input: Bitmap,
         output: Bitmap,
         paramPath: String,
@@ -29,7 +44,15 @@ object NativeEnhancer {
         tile: Int,
         useGpu: Boolean,
         listener: ProgressListener
-    ): Boolean
+    ): Boolean {
+        val handle = createSession(paramPath, binPath, useGpu)
+        if (handle == 0L) return false
+        try {
+            return upscaleWith(handle, input, output, modelScale, tile, listener)
+        } finally {
+            destroySession(handle)
+        }
+    }
 }
 
 enum class UpscaleModel(val label: String, val hint: String, val file: String, val tile: Int) {

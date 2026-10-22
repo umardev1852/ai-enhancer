@@ -4,6 +4,10 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 class MainActivity : ComponentActivity() {
@@ -12,8 +16,14 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             AppTheme {
-                val vm: EditorViewModel = viewModel()
-                EditorScreen(vm)
+                val photoVm: EditorViewModel = viewModel()
+                val videoVm: VideoViewModel = viewModel()
+                var mode by rememberSaveable { mutableIntStateOf(0) }
+                if (mode == 0) {
+                    EditorScreen(photoVm, onOpenVideo = { mode = 1 })
+                } else {
+                    VideoScreen(videoVm, onBack = { mode = 0 })
+                }
             }
         }
     }

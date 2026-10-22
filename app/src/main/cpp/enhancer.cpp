@@ -1,8 +1,7 @@
 // Real-ESRGAN (ncnn) tiled super-resolution for Android bitmaps.
 //
-// Kotlin side:  object NativeEnhancer { external fun upscale(...) }
-// The model (param + bin) is any Real-ESRGAN ncnn model with input blob "data"
-// and output blob "output" (realesr-animevideov3-x4, realesrgan-x4plus, ...).
+// A "session" keeps the loaded network alive so a video can reuse it for every frame.
+// Model: any Real-ESRGAN ncnn model with input blob "data" and output blob "output".
 
 #include <jni.h>
 #include <android/bitmap.h>
@@ -10,6 +9,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -33,6 +33,12 @@ extern "C" JNIEXPORT void JNICALL JNI_OnUnload(JavaVM*, void*)
 }
 
 namespace {
+
+struct Session
+{
+    ncnn::Net net;
+    bool gpu = false;
+};
 
 // RAII helper so pixels are always unlocked.
 struct BitmapLock
@@ -68,15 +74,49 @@ Java_com_umar_aienhancer_NativeEnhancer_gpuCount(JNIEnv*, jobject)
     return ncnn::get_gpu_count();
 }
 
+// Loads the network once. Returns an opaque handle, or 0 on failure.
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_umar_aienhancer_NativeEnhancer_createSession(JNIEnv* env, jobject /*thiz*/,
+                                                      jstring jParam, jstring jBin, jboolean useGpu)
+{
+    auto* s = new Session();
+    s->gpu = (useGpu == JNI_TRUE) && ncnn::get_gpu_count() > 0;
+    s->net.opt.use_vulkan_compute = s->gpu;
+
+    const std::string paramPath = toStdString(env, jParam);
+    const std::string binPath = toStdString(env, jBin);
+    LOGI("model=%s gpu=%d", paramPath.c_str(), (int)s->gpu);
+
+    if (s->net.load_param(paramPath.c_str()) != 0 || s->net.load_model(binPath.c_str()) != 0)
+    {
+        LOGE("failed to load model");
+        delete s;
+        return 0;
+    }
+    return reinterpret_cast<jlong>(s);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_umar_aienhancer_NativeEnhancer_destroySession(JNIEnv*, jobject /*thiz*/, jlong handle)
+{
+    delete reinterpret_cast<Session*>(handle);
+}
+
 // Upscales `inBmp` (RGBA_8888) into `outBmp` (RGBA_8888, size = in * modelScale).
 // Returns true on success, false on failure or when the listener asked to cancel.
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_umar_aienhancer_NativeEnhancer_upscale(JNIEnv* env, jobject /*thiz*/,
-                                                jobject inBmp, jobject outBmp,
-                                                jstring jParam, jstring jBin,
-                                                jint modelScale, jint tileSize,
-                                                jboolean useGpu, jobject listener)
+Java_com_umar_aienhancer_NativeEnhancer_upscaleWith(JNIEnv* env, jobject /*thiz*/, jlong handle,
+                                                    jobject inBmp, jobject outBmp,
+                                                    jint modelScale, jint tileSize, jobject listener)
 {
+    auto* session = reinterpret_cast<Session*>(handle);
+    if (session == nullptr)
+    {
+        LOGE("null session");
+        return JNI_FALSE;
+    }
+    ncnn::Net& net = session->net;
+
     AndroidBitmapInfo ii;
     AndroidBitmapInfo oi;
     if (AndroidBitmap_getInfo(env, inBmp, &ii) != ANDROID_BITMAP_RESULT_SUCCESS ||
@@ -105,20 +145,6 @@ Java_com_umar_aienhancer_NativeEnhancer_upscale(JNIEnv* env, jobject /*thiz*/,
     if (!lockIn.ok || !lockOut.ok)
     {
         LOGE("lockPixels failed");
-        return JNI_FALSE;
-    }
-
-    const std::string paramPath = toStdString(env, jParam);
-    const std::string binPath = toStdString(env, jBin);
-
-    ncnn::Net net;
-    const bool gpu = (useGpu == JNI_TRUE) && ncnn::get_gpu_count() > 0;
-    net.opt.use_vulkan_compute = gpu;
-    LOGI("model=%s gpu=%d tile=%d", paramPath.c_str(), (int)gpu, (int)tileSize);
-
-    if (net.load_param(paramPath.c_str()) != 0 || net.load_model(binPath.c_str()) != 0)
-    {
-        LOGE("failed to load model");
         return JNI_FALSE;
     }
 
