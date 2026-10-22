@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -55,8 +56,13 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -162,6 +168,7 @@ fun EditorScreen(vm: EditorViewModel, onOpenVideo: () -> Unit) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Label("Original  <")
+                        Label("Pinch = zoom")
                         Label(">  Enhanced")
                     }
                 } else if (!vm.busy) {
@@ -185,7 +192,7 @@ fun EditorScreen(vm: EditorViewModel, onOpenVideo: () -> Unit) {
                     .padding(horizontal = 16.dp, vertical = 4.dp)
             ) {
                 val size = vm.base?.let { "${it.width} x ${it.height}" }
-                val line = listOfNotNull(vm.status, size?.let { "Size: $it" }).joinToString("   |   ")
+                val line = listOfNotNull(vm.status, vm.eta.ifEmpty { null }, size?.let { "Size: $it" }).joinToString("   |   ")
                 if (line.isNotEmpty()) {
                     Text(line, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                 }
@@ -423,35 +430,98 @@ private fun fitRect(imgW: Int, imgH: Int, boxW: Float, boxH: Float): Rect {
     return Rect(left, top, left + w, top + h)
 }
 
-/** Before / after viewer. Drag (or tap) to move the divider. */
+/**
+ * Before / after viewer.
+ *  - one finger: move the divider (when zoomed in, grab the divider handle; elsewhere drags the picture)
+ *  - two fingers: pinch to zoom, drag to pan
+ *  - double tap: reset zoom
+ */
 @Composable
 private fun CompareView(before: Bitmap, after: Bitmap, modifier: Modifier = Modifier) {
     val beforeImg = remember(before) { before.asImageBitmap() }
     val afterImg = remember(after) { after.asImageBitmap() }
     var fraction by remember { mutableFloatStateOf(0.5f) }
+    var scale by remember { mutableFloatStateOf(1f) }
+    var pan by remember { mutableStateOf(Offset.Zero) }
     var box by remember { mutableStateOf(IntSize.Zero) }
+
+    // where the (zoomed) picture is on screen
+    fun shown(): Rect {
+        val r = fitRect(afterImg.width, afterImg.height, box.width.toFloat(), box.height.toFloat())
+        val cx = box.width / 2f
+        val cy = box.height / 2f
+        val left = cx + (r.left - cx) * scale + pan.x
+        val top = cy + (r.top - cy) * scale + pan.y
+        return Rect(left, top, left + r.width * scale, top + r.height * scale)
+    }
+
+    fun clampPan(p: Offset, s: Float): Offset {
+        val maxX = box.width * (s - 1f) / 2f
+        val maxY = box.height * (s - 1f) / 2f
+        return Offset(p.x.coerceIn(-maxX, maxX), p.y.coerceIn(-maxY, maxY))
+    }
 
     Canvas(
         modifier
             .onSizeChanged { box = it }
-            .pointerInput(afterImg) {
-                detectDragGestures { change, _ ->
-                    change.consume()
-                    val r = fitRect(afterImg.width, afterImg.height, size.width.toFloat(), size.height.toFloat())
-                    if (r.width > 0f) fraction = ((change.position.x - r.left) / r.width).coerceIn(0f, 1f)
-                }
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onDoubleTap = {
+                        scale = 1f
+                        pan = Offset.Zero
+                    },
+                    onTap = { pos ->
+                        val d = shown()
+                        if (d.width > 0f) fraction = ((pos.x - d.left) / d.width).coerceIn(0f, 1f)
+                    }
+                )
             }
-            .pointerInput(afterImg) {
-                detectTapGestures { pos ->
-                    val r = fitRect(afterImg.width, afterImg.height, size.width.toFloat(), size.height.toFloat())
-                    if (r.width > 0f) fraction = ((pos.x - r.left) / r.width).coerceIn(0f, 1f)
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val d0 = shown()
+                    val handleX = d0.left + d0.width * fraction
+                    // zoomed in: only dragging near the divider moves it, otherwise the picture pans
+                    val grabsDivider = scale <= 1.02f || kotlin.math.abs(down.position.x - handleX) < 56f
+                    do {
+                        val event = awaitPointerEvent()
+                        val pressed = event.changes.count { it.pressed }
+                        if (pressed >= 2) {
+                            val zoom = event.calculateZoom()
+                            val centroid = event.calculateCentroid()
+                            val move = event.calculatePan()
+                            val newScale = (scale * zoom).coerceIn(1f, 10f)
+                            val f = newScale / scale
+                            val cx = box.width / 2f
+                            val cy = box.height / 2f
+                            val around = Offset(
+                                (centroid.x - cx) * (1f - f) + pan.x * f,
+                                (centroid.y - cy) * (1f - f) + pan.y * f
+                            )
+                            scale = newScale
+                            pan = clampPan(around + move, newScale)
+                            event.changes.forEach { it.consume() }
+                        } else if (pressed == 1) {
+                            val change = event.changes.first { it.pressed }
+                            val dragged = change.positionChange()
+                            if (dragged != Offset.Zero) {
+                                if (grabsDivider) {
+                                    val d = shown()
+                                    if (d.width > 0f) fraction = ((change.position.x - d.left) / d.width).coerceIn(0f, 1f)
+                                } else {
+                                    pan = clampPan(pan + dragged, scale)
+                                }
+                                change.consume()
+                            }
+                        }
+                    } while (event.changes.any { it.pressed })
                 }
             }
     ) {
-        val r = fitRect(afterImg.width, afterImg.height, size.width, size.height)
-        if (r.width <= 0f) return@Canvas
-        val offset = IntOffset(r.left.roundToInt(), r.top.roundToInt())
-        val dstSize = IntSize(r.width.roundToInt(), r.height.roundToInt())
+        val d = shown()
+        if (d.width <= 0f) return@Canvas
+        val offset = IntOffset(d.left.roundToInt(), d.top.roundToInt())
+        val dstSize = IntSize(d.width.roundToInt(), d.height.roundToInt())
 
         drawImage(
             afterImg,
@@ -459,8 +529,8 @@ private fun CompareView(before: Bitmap, after: Bitmap, modifier: Modifier = Modi
             dstSize = dstSize,
             filterQuality = FilterQuality.High
         )
-        val x = r.left + r.width * fraction
-        clipRect(left = r.left, top = r.top, right = x, bottom = r.bottom) {
+        val x = d.left + d.width * fraction
+        clipRect(left = max(d.left, 0f), top = max(d.top, 0f), right = min(x, size.width), bottom = min(d.bottom, size.height)) {
             drawImage(
                 beforeImg,
                 dstOffset = offset,
@@ -468,8 +538,10 @@ private fun CompareView(before: Bitmap, after: Bitmap, modifier: Modifier = Modi
                 filterQuality = FilterQuality.High
             )
         }
-        drawLine(Color.White, Offset(x, r.top), Offset(x, r.bottom), strokeWidth = 3f)
-        drawCircle(Color.White, radius = 18f, center = Offset(x, (r.top + r.bottom) / 2f))
-        drawCircle(Color(0xFF0E1014), radius = 7f, center = Offset(x, (r.top + r.bottom) / 2f))
+        val y0 = max(d.top, 0f)
+        val y1 = min(d.bottom, size.height)
+        drawLine(Color.White, Offset(x, y0), Offset(x, y1), strokeWidth = 3f)
+        drawCircle(Color.White, radius = 18f, center = Offset(x, (y0 + y1) / 2f))
+        drawCircle(Color(0xFF0E1014), radius = 7f, center = Offset(x, (y0 + y1) / 2f))
     }
 }

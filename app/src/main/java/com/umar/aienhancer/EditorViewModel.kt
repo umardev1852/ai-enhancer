@@ -3,6 +3,7 @@ package com.umar.aienhancer
 import android.app.Application
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -15,6 +16,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.max
+
+/** Longest side of the on-screen previews. Large enough that pinch-zoom still shows real detail. */
+private const val PREVIEW_SIDE = 2400
 
 private class Snapshot(val bitmap: Bitmap, val hasAlpha: Boolean, val before: Bitmap?)
 
@@ -31,11 +35,12 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     var progress by mutableFloatStateOf(-1f); private set   // -1 = indeterminate
     var status by mutableStateOf<String?>(null); private set
     var undoDepth by mutableIntStateOf(0); private set
+    var eta by mutableStateOf(""); private set
 
     // ---- AI settings
-    var model by mutableStateOf(UpscaleModel.PHOTO)
+    var model by mutableStateOf(UpscaleModel.FAST)
     var outScale by mutableIntStateOf(4)
-    var maxInput by mutableIntStateOf(768)
+    var maxInput by mutableIntStateOf(512)
     var useGpu by mutableStateOf(true)
 
     // ---- face retouch settings
@@ -64,7 +69,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 undoDepth = 0
                 adjust = Adjust()
                 filter = Filters.ORIGINAL
-                beforePreview = ImageOps.downscaleTo(bmp, 1400)
+                beforePreview = ImageOps.downscaleTo(bmp, PREVIEW_SIDE)
                 setBase(bmp, alpha = false, push = false)
                 status = "Loaded ${bmp.width}x${bmp.height}"
             } catch (t: Throwable) {
@@ -86,7 +91,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
         base = b
         baseHasAlpha = alpha
-        basePreview = ImageOps.downscaleTo(b, 1400)
+        basePreview = ImageOps.downscaleTo(b, PREVIEW_SIDE)
         recompute()
     }
 
@@ -152,11 +157,17 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 val (param, bin) = ModelStore.ensure(getApplication(), model)
                 val big = Bitmap.createBitmap(limited.width * 4, limited.height * 4, Bitmap.Config.ARGB_8888)
                 val wantGpu = useGpu && NativeEnhancer.gpuCount() > 0
-                status = if (wantGpu) "Enhancing with GPU..." else "Enhancing with CPU (slower)..."
+                status = if (wantGpu) "Enhancing with GPU..." else "No GPU found - using CPU, this will be very slow"
+                val t0 = SystemClock.elapsedRealtime()
                 val ok = NativeEnhancer.upscale(
                     limited, big, param, bin, 4, model.tile, wantGpu,
                     ProgressListener { done, total ->
                         progress = if (total > 0) done.toFloat() / total else -1f
+                        if (done > 0 && total > 0) {
+                            val perTile = (SystemClock.elapsedRealtime() - t0) / done.toFloat()
+                            val left = (perTile * (total - done) / 1000f).toInt()
+                            eta = "About ${left / 60} min ${left % 60} s left"
+                        }
                         !cancelled
                     }
                 )
@@ -169,7 +180,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 if (baseHasAlpha) result = ImageOps.restoreAlpha(result, limited)
                 setBase(result, baseHasAlpha, push = true)
-                status = "Done: ${result.width}x${result.height}"
+                val shrunk = if (maxOf(src.width, src.height) > maxInput)
+                    "  (photo was first shrunk to ${limited.width}x${limited.height}, raise 'Max input size' for more detail)" else ""
+                status = "Done: ${src.width}x${src.height} -> ${result.width}x${result.height}$shrunk"
             } catch (t: OutOfMemoryError) {
                 status = "Not enough memory - pick a smaller max input size"
             } catch (t: Throwable) {
@@ -177,6 +190,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             } finally {
                 busy = false
                 progress = -1f
+                eta = ""
             }
         }
     }
@@ -261,7 +275,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         beforePreview = s.before
         base = s.bitmap
         baseHasAlpha = s.hasAlpha
-        basePreview = ImageOps.downscaleTo(s.bitmap, 1400)
+        basePreview = ImageOps.downscaleTo(s.bitmap, PREVIEW_SIDE)
         recompute()
         status = "Undone"
     }
@@ -273,7 +287,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         undoDepth = 0
         adjust = Adjust()
         filter = Filters.ORIGINAL
-        beforePreview = ImageOps.downscaleTo(orig, 1400)
+        beforePreview = ImageOps.downscaleTo(orig, PREVIEW_SIDE)
         setBase(orig, alpha = false, push = false)
         status = "Back to original"
     }

@@ -56,8 +56,8 @@ object NativeEnhancer {
 }
 
 enum class UpscaleModel(val label: String, val hint: String, val file: String, val tile: Int) {
-    PHOTO("Photo (best)", "Real-ESRGAN x4+  -  best for real photos, slower", "realesrgan-x4plus", 128),
-    FAST("Fast", "Compact model  -  quick, good for small/old images", "realesr-animevideov3-x4", 200)
+    PHOTO("Photo (best)", "Real-ESRGAN x4+  -  most detail but VERY slow on phones, use for small photos only", "realesrgan-x4plus", 192),
+    FAST("Fast", "Compact model  -  several times faster, recommended", "realesr-animevideov3-x4", 256)
 }
 
 object ModelStore {
